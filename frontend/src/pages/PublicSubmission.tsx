@@ -380,7 +380,7 @@ function ClosedNotice({ reason, closesAt }: { reason?: string; closesAt: string 
       <h2 className="font-semibold text-lg text-ink-900">{message}</h2>
       <p className="text-sm text-ink-600 mt-2">
         {reason === "deadline_passed" || !reason
-          ? "The submission deadline has passed. Late submissions are not accepted."
+          ? `The submission deadline was ${new Date(closesAt).toLocaleString()}. Late submissions are not accepted.`
           : "Check back later, or contact the organizer for details."}
       </p>
     </div>
