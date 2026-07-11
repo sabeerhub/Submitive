@@ -5,7 +5,7 @@ import { auth } from "./firebase.js";
 // frontend (Vercel) and backend (Render) live on different domains, so
 // there's no proxy — VITE_API_BASE_URL must be set to the real backend URL,
 // e.g. https://submitiv-backend.onrender.com/api.
-const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
+const API_BASE = (import.meta.env.VITE_API_BASE_URL ?? "/api").replace(/\/+$/, "");
 
 async function authHeader(): Promise<Record<string, string>> {
   const user = auth.currentUser;
