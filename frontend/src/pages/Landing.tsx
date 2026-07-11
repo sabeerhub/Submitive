@@ -271,32 +271,21 @@ export default function Landing() {
       <section id="pricing" className="max-w-7xl mx-auto px-5 sm:px-8 py-16 sm:py-24 scroll-mt-16">
         <div className="max-w-lg mx-auto text-center">
           <span className="text-xs font-medium text-primary-600 uppercase tracking-wide">Pricing</span>
-          <h2 className="font-display text-3xl sm:text-4xl text-ink-900 mt-3">Start free. Stay free.</h2>
+          <h2 className="font-display text-3xl sm:text-4xl text-ink-900 mt-3">Free. No catch.</h2>
+          <p className="text-ink-600 mt-3">Submitiv is free to use — no credit card, no trial period, no feature paywall.</p>
         </div>
 
-        <div className="grid sm:grid-cols-2 gap-6 mt-12 max-w-2xl mx-auto">
-          <Card elevation="md" className="flex flex-col">
-            <p className="font-semibold text-ink-900">Free</p>
-            <p className="mt-2"><span className="text-3xl font-display text-ink-900">$0</span> <span className="text-ink-400 text-sm">/ forever</span></p>
-            <ul className="flex flex-col gap-2.5 mt-6 text-sm text-ink-600 flex-1">
+        <div className="max-w-md mx-auto mt-10">
+          <Card elevation="md" className="flex flex-col text-center">
+            <p className="mt-1"><span className="text-4xl font-display text-ink-900">$0</span> <span className="text-ink-400 text-sm">/ forever</span></p>
+            <ul className="flex flex-col gap-2.5 mt-6 text-sm text-ink-600 text-left">
               {["Unlimited submission forms", "5GB file storage", "CSV & ZIP export", "Deadline enforcement", "Email confirmations"].map((f) => (
                 <li key={f} className="flex items-center gap-2"><Check size={14} className="text-success-500 shrink-0" /> {f}</li>
               ))}
             </ul>
-            <Link to="/register" className="mt-6">
+            <Link to="/register" className="mt-7">
               <Button className="w-full">Get Started Free</Button>
             </Link>
-          </Card>
-
-          <Card elevation="flat" className="flex flex-col border-dashed opacity-70">
-            <p className="font-semibold text-ink-900">Pro</p>
-            <p className="mt-2"><span className="text-3xl font-display text-ink-900">Soon</span></p>
-            <ul className="flex flex-col gap-2.5 mt-6 text-sm text-ink-600 flex-1">
-              {["Team members", "Custom branding", "Priority support", "Expanded storage"].map((f) => (
-                <li key={f} className="flex items-center gap-2"><Check size={14} className="text-ink-300 shrink-0" /> {f}</li>
-              ))}
-            </ul>
-            <Button className="w-full mt-6" variant="outline" disabled>Coming soon</Button>
           </Card>
         </div>
       </section>
