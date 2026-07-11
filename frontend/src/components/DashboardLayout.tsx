@@ -6,6 +6,7 @@ import { LayoutGrid, FileStack, LayoutTemplate, Users, Settings, LogOut, Plus, M
 import { useAuth } from "../contexts/AuthContext.js";
 import { logout } from "../lib/auth.js";
 import { Button } from "./ui/Button.js";
+import { Logomark } from "./ui/Logomark.js";
 
 const NAV_ITEMS = [
   { to: "/dashboard", label: "Overview", icon: LayoutGrid, end: true },
@@ -28,8 +29,8 @@ function SidebarContent({ onNavigate }: { onNavigate?: () => void }) {
 
   return (
     <>
-      <div className="px-6 py-6 flex items-center gap-2 font-semibold">
-        <span className="h-2 w-2 rounded-full bg-primary-500" />
+      <div className="px-6 py-6 flex items-center gap-2.5 font-semibold">
+        <Logomark size={24} />
         Submitiv
       </div>
 

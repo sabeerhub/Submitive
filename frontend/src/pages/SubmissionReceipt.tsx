@@ -1,20 +1,23 @@
 import { useEffect, useState } from "react";
 import { useParams, useSearchParams, Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { CheckCircle2, Printer, Mail } from "lucide-react";
+import { CheckCircle2, Printer, Mail, Download } from "lucide-react";
 import { Button } from "../components/ui/Button.js";
+import { Skeleton } from "../components/ui/Skeleton.js";
 import { api } from "../lib/api.js";
 
 interface Receipt {
   id: string;
   reference_number: string;
   submitted_at: string;
+  completed_at: string | null;
   submitter_email: string | null;
+  submitter_name: string | null;
   forms: { title: string; workspace: { name: string } };
 }
 
 export default function SubmissionReceipt() {
-  const { slug, submissionId } = useParams<{ slug: string; submissionId: string }>();
+  const { submissionId } = useParams<{ slug: string; submissionId: string }>();
   const [searchParams] = useSearchParams();
   const ref = searchParams.get("ref") ?? "";
   const [receipt, setReceipt] = useState<Receipt | null>(null);
@@ -34,6 +37,26 @@ export default function SubmissionReceipt() {
     if (!receipt?.submitter_email) return;
     setEmailSent(true);
   };
+  const handleDownload = () => {
+    if (!receipt) return;
+    const lines = [
+      "SUBMITIV — SUBMISSION RECEIPT",
+      "",
+      `Submission ID: ${receipt.reference_number}`,
+      receipt.submitter_name ? `Name: ${receipt.submitter_name}` : null,
+      receipt.submitter_email ? `Email: ${receipt.submitter_email}` : null,
+      `Submitted At: ${new Date(receipt.completed_at ?? receipt.submitted_at).toLocaleString()}`,
+      `Form: ${receipt.forms.title}`,
+      `Organization: ${receipt.forms.workspace.name}`,
+    ].filter(Boolean);
+    const blob = new Blob([lines.join("\n")], { type: "text/plain" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `receipt-${receipt.reference_number}.txt`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
 
   if (notFound) {
     return (
@@ -45,8 +68,13 @@ export default function SubmissionReceipt() {
 
   if (!receipt) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-paper">
-        <div className="h-8 w-8 rounded-full border-2 border-slate-200 border-t-primary-500 animate-spin" />
+      <div className="min-h-screen bg-paper flex items-center justify-center px-4 py-12">
+        <div className="max-w-md w-full bg-white rounded-card shadow-md border border-slate-100 p-8">
+          <Skeleton className="h-12 w-12 rounded-full mx-auto mb-4" />
+          <Skeleton className="h-6 w-1/2 mx-auto mb-2" />
+          <Skeleton className="h-4 w-3/4 mx-auto mb-6" />
+          <Skeleton className="h-32" />
+        </div>
       </div>
     );
   }
@@ -74,12 +102,16 @@ export default function SubmissionReceipt() {
 
         <div className="text-left bg-slate-50 rounded-control px-4 py-4 mt-6 space-y-2.5 border border-slate-100">
           <Row label="Submission ID" value={receipt.reference_number} mono />
+          {receipt.submitter_name && <Row label="Name" value={receipt.submitter_name} />}
           {receipt.submitter_email && <Row label="Email" value={receipt.submitter_email} />}
-          <Row label="Submitted At" value={new Date(receipt.submitted_at).toLocaleString()} />
+          <Row label="Submitted At" value={new Date(receipt.completed_at ?? receipt.submitted_at).toLocaleString()} />
           <Row label="Organization" value={receipt.forms.workspace.name} />
         </div>
 
-        <div className="flex gap-3 mt-6 print:hidden">
+        <div className="flex gap-3 mt-6 print:hidden flex-wrap">
+          <Button variant="outline" className="flex-1" onClick={handleDownload}>
+            <Download size={15} /> Download
+          </Button>
           <Button variant="outline" className="flex-1" onClick={handlePrint}>
             <Printer size={15} /> Print
           </Button>
@@ -90,8 +122,8 @@ export default function SubmissionReceipt() {
           )}
         </div>
 
-        <Link to={`/s/${slug}`} className="text-xs text-ink-400 mt-6 inline-block print:hidden hover:text-ink-600 transition-colors">
-          Back to form
+        <Link to="/" className="text-xs text-ink-400 mt-6 inline-block print:hidden hover:text-ink-600 transition-colors">
+          Return to Home
         </Link>
       </motion.div>
     </div>

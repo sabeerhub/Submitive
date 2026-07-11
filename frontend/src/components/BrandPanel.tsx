@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { Lock } from "lucide-react";
+import { Logomark } from "./ui/Logomark.js";
 
 const SEAL_TEXT = "SUBMITIV • TIMESTAMPED • SECURED • ON TIME • ";
 
@@ -55,8 +56,8 @@ export function BrandPanel() {
         }}
       />
 
-      <div className="relative flex items-center gap-2 font-semibold text-lg">
-        <span className="h-2 w-2 rounded-full bg-primary-400" />
+      <div className="relative flex items-center gap-2.5 font-semibold text-lg">
+        <Logomark size={22} bare />
         Submitiv
       </div>
 

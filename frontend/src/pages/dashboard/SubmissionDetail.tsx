@@ -4,7 +4,7 @@ import { ArrowLeft, Download, FileText } from "lucide-react";
 import { DashboardLayout } from "../../components/DashboardLayout.js";
 import { Card } from "../../components/ui/Card.js";
 import { Skeleton } from "../../components/ui/Skeleton.js";
-import { Badge } from "../../components/ui/Badge.js";
+import { SubmissionStatusBadge } from "../../components/ui/Badge.js";
 import { ErrorState } from "../../components/ui/ErrorState.js";
 import { Button } from "../../components/ui/Button.js";
 import { api } from "../../lib/api.js";
@@ -63,7 +63,7 @@ export default function SubmissionDetail() {
               <p className="font-mono text-sm text-primary-600">{submission.reference_number}</p>
               <p className="text-xs text-ink-400 mt-1">{new Date(submission.submitted_at).toLocaleString()}</p>
             </div>
-            <Badge tone={submission.status === "flagged" ? "warning" : "success"}>{submission.status}</Badge>
+            <SubmissionStatusBadge status={submission.status} />
           </div>
         </Card>
 

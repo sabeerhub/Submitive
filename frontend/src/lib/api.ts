@@ -1,6 +1,11 @@
 import { auth } from "./firebase.js";
 
-const API_BASE = "/api";
+// In local dev, "/api" is relative and gets proxied to localhost:4000 by
+// Vite's dev server config (frontend/vite.config.ts). In production, the
+// frontend (Vercel) and backend (Render) live on different domains, so
+// there's no proxy — VITE_API_BASE_URL must be set to the real backend URL,
+// e.g. https://submitiv-backend.onrender.com/api.
+const API_BASE = import.meta.env.VITE_API_BASE_URL ?? "/api";
 
 async function authHeader(): Promise<Record<string, string>> {
   const user = auth.currentUser;

@@ -1,14 +1,17 @@
 import { useEffect, useState } from "react";
 import { useParams, useNavigate } from "react-router-dom";
-import { motion } from "framer-motion";
-import { Lock, UploadCloud } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { Lock, UploadCloud, ArrowLeft, ArrowRight } from "lucide-react";
 import { Button } from "../components/ui/Button.js";
 import { TextField } from "../components/ui/TextField.js";
 import { RichTextEditor } from "../components/ui/RichTextEditor.js";
 import { FileDropzone } from "../components/ui/FileDropzone.js";
+import { Badge } from "../components/ui/Badge.js";
+import { Skeleton } from "../components/ui/Skeleton.js";
 import { useCountdown } from "../hooks/useCountdown.js";
 import { api } from "../lib/api.js";
 import { uploadFileToSignedUrl } from "../lib/storage.js";
+import { IDENTITY_FIELD_TYPES } from "../types/domain.js";
 import type { FormDetail } from "../types/domain.js";
 
 interface FormResponse {
@@ -16,17 +19,28 @@ interface FormResponse {
   deadline: { isOpen: boolean; reason?: string };
 }
 
+type Step = "identity" | "workspace";
+
+interface SubmissionSession {
+  submissionId: string;
+  referenceNumber: string;
+}
+
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export default function PublicSubmission() {
   const { slug } = useParams<{ slug: string }>();
   const navigate = useNavigate();
   const [data, setData] = useState<FormResponse | null>(null);
   const [notFound, setNotFound] = useState(false);
+  const [step, setStep] = useState<Step>("identity");
   const [values, setValues] = useState<Record<string, string | string[]>>({});
   const [files, setFiles] = useState<Record<string, File | null>>({});
+  const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [uploadStage, setUploadStage] = useState<string | null>(null);
-  const [errors, setErrors] = useState<Record<string, string>>({});
   const [serverError, setServerError] = useState<string | null>(null);
+  const [session, setSession] = useState<SubmissionSession | null>(null);
 
   useEffect(() => {
     if (!slug) return;
@@ -36,18 +50,59 @@ export default function PublicSubmission() {
       .catch(() => setNotFound(true));
   }, [slug]);
 
+  // Restore an in-progress session (identity already saved) if the submitter
+  // refreshes or briefly navigates away — the whole point of persisting this
+  // is that they should never have to re-enter their identity.
+  useEffect(() => {
+    if (!slug) return;
+    try {
+      const raw = sessionStorage.getItem(`submitiv:${slug}`);
+      if (!raw) return;
+      const saved = JSON.parse(raw) as { values?: typeof values; session?: SubmissionSession; step?: Step };
+      if (saved.values) setValues(saved.values);
+      if (saved.session) setSession(saved.session);
+      if (saved.step) setStep(saved.step);
+    } catch {
+      // corrupt/old session data — just start fresh
+    }
+  }, [slug]);
+
+  useEffect(() => {
+    if (!slug) return;
+    sessionStorage.setItem(`submitiv:${slug}`, JSON.stringify({ values, session, step }));
+  }, [slug, values, session, step]);
+
   const countdown = useCountdown(data?.form.closes_at ?? null);
   const isOpen = data ? data.deadline.isOpen && !countdown.expired : false;
+
+  const identityFields = data ? data.form.form_fields.filter((f) => IDENTITY_FIELD_TYPES.has(f.field_type)) : [];
+  const contentFields = data ? data.form.form_fields.filter((f) => !IDENTITY_FIELD_TYPES.has(f.field_type)) : [];
 
   const setValue = (fieldId: string, value: string | string[]) => {
     setValues((prev) => ({ ...prev, [fieldId]: value }));
     setErrors((prev) => ({ ...prev, [fieldId]: "" }));
   };
 
-  const validate = (): boolean => {
+  const validateIdentity = (): boolean => {
+    const nextErrors: Record<string, string> = {};
+    for (const field of identityFields) {
+      const v = values[field.id];
+      if (field.is_required && !v) {
+        nextErrors[field.id] = "This field is required.";
+        continue;
+      }
+      if (field.field_type === "email" && typeof v === "string" && v && !EMAIL_RE.test(v)) {
+        nextErrors[field.id] = "Enter a valid email address.";
+      }
+    }
+    setErrors(nextErrors);
+    return Object.keys(nextErrors).length === 0;
+  };
+
+  const validateWorkspace = (): boolean => {
     if (!data) return false;
     const nextErrors: Record<string, string> = {};
-    for (const field of data.form.form_fields) {
+    for (const field of contentFields) {
       if (field.field_type === "file_upload") {
         const file = files[field.id];
         if (field.is_required && !file) {
@@ -71,34 +126,57 @@ export default function PublicSubmission() {
     return Object.keys(nextErrors).length === 0;
   };
 
-  const handleSubmit = async () => {
+  // Step 2 -> Step 3: creates the submission from identity fields only.
+  const handleContinue = async () => {
     if (!data || !slug) return;
-    if (!validate()) return;
+    if (!validateIdentity()) return;
+
+    // Already created (submitter went Back then forward again) — identity
+    // is already saved server-side, don't create a second submission.
+    if (session) {
+      setStep("workspace");
+      return;
+    }
 
     setSubmitting(true);
     setServerError(null);
     try {
-      const submitterEmailField = data.form.form_fields.find((f) => f.field_type === "email");
-      const submitterEmail = submitterEmailField ? (values[submitterEmailField.id] as string | undefined) : undefined;
+      const emailField = identityFields.find((f) => f.field_type === "email");
+      const submitterEmail = emailField ? (values[emailField.id] as string | undefined) : undefined;
 
-      setUploadStage("Submitting your response…");
       const res = await api.post<{ submission_id: string; reference_number: string }>("/submissions", {
         form_slug: slug,
         values,
         submitter_email: submitterEmail,
       });
+      setSession({ submissionId: res.submission_id, referenceNumber: res.reference_number });
+      setStep("workspace");
+    } catch (err) {
+      setServerError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
+    } finally {
+      setSubmitting(false);
+    }
+  };
 
-      const fileFields = data.form.form_fields.filter((f) => f.field_type === "file_upload");
+  // Step 4: uploads any files, then finalizes the submission.
+  const handleSubmitAssignment = async () => {
+    if (!data || !slug || !session) return;
+    if (!validateWorkspace()) return;
+
+    setSubmitting(true);
+    setServerError(null);
+    try {
+      const fileFields = contentFields.filter((f) => f.field_type === "file_upload");
       for (const field of fileFields) {
         const file = files[field.id];
         if (!file) continue;
         setUploadStage(`Uploading ${file.name}…`);
         const signed = await api.post<{ signed_url: string; token: string; path: string }>(
-          `/submissions/${res.submission_id}/files/sign`,
+          `/submissions/${session.submissionId}/files/sign`,
           { field_id: field.id, filename: file.name, mime_type: file.type || "application/octet-stream", size_bytes: file.size }
         );
         await uploadFileToSignedUrl(signed.path, signed.token, file);
-        await api.post(`/submissions/${res.submission_id}/files`, {
+        await api.post(`/submissions/${session.submissionId}/files`, {
           field_id: field.id,
           path: signed.path,
           original_name: file.name,
@@ -107,7 +185,16 @@ export default function PublicSubmission() {
         });
       }
 
-      navigate(`/s/${slug}/receipt/${res.submission_id}?ref=${res.reference_number}`);
+      setUploadStage("Finalizing your submission…");
+      const contentValues = Object.fromEntries(
+        contentFields.filter((f) => f.field_type !== "file_upload").map((f) => [f.id, values[f.id]]).filter(([, v]) => v !== undefined)
+      );
+      await api.patch<{ submission_id: string; reference_number: string }>(`/submissions/${session.submissionId}/finalize`, {
+        values: contentValues,
+      });
+
+      sessionStorage.removeItem(`submitiv:${slug}`);
+      navigate(`/s/${slug}/receipt/${session.submissionId}?ref=${session.referenceNumber}`);
     } catch (err) {
       setServerError(err instanceof Error ? err.message : "Something went wrong. Please try again.");
     } finally {
@@ -126,8 +213,19 @@ export default function PublicSubmission() {
 
   if (!data) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-paper">
-        <div className="h-8 w-8 rounded-full border-2 border-slate-200 border-t-primary-500 animate-spin" />
+      <div className="min-h-screen bg-paper py-12 px-4">
+        <div className="max-w-2xl mx-auto">
+          <Skeleton className="h-4 w-32 mx-auto mb-6" />
+          <div className="bg-white rounded-card shadow-md border border-slate-100 p-8">
+            <Skeleton className="h-7 w-2/3 mb-3" />
+            <Skeleton className="h-4 w-1/2 mb-7" />
+            <div className="flex flex-col gap-5">
+              <Skeleton className="h-11" />
+              <Skeleton className="h-11" />
+              <Skeleton className="h-11" />
+            </div>
+          </div>
+        </div>
       </div>
     );
   }
@@ -151,58 +249,110 @@ export default function PublicSubmission() {
           {!isOpen ? (
             <ClosedNotice reason={data.deadline.reason} closesAt={form.closes_at} />
           ) : (
-            <>
-              <h1 className="text-2xl font-bold text-ink-900">{form.title}</h1>
-              {form.description && <p className="text-ink-600 text-sm mt-2">{form.description}</p>}
+            <AnimatePresence mode="wait">
+              {step === "identity" ? (
+                <motion.div
+                  key="identity"
+                  initial={{ opacity: 0, x: -8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: -8 }}
+                  transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <h1 className="text-2xl font-display text-ink-900">{form.title}</h1>
+                  <p className="text-ink-600 text-sm mt-2">Enter your details to begin your submission.</p>
 
-              <div className="flex gap-2.5 mt-5">
-                {[
-                  [countdown.days, "Days"],
-                  [countdown.hours, "Hours"],
-                  [countdown.minutes, "Minutes"],
-                  [countdown.seconds, "Seconds"],
-                ].map(([val, label]) => (
-                  <div key={label as string} className="bg-slate-50 rounded-control px-3 py-2.5 text-center flex-1">
-                    <p className="text-lg font-bold tabular-nums text-ink-900">{String(val).padStart(2, "0")}</p>
-                    <p className="text-2xs text-ink-400 uppercase tracking-wide mt-0.5">{label}</p>
+                  <div className="flex flex-col gap-5 mt-7">
+                    {identityFields.map((field) => (
+                      <FieldRenderer
+                        key={field.id}
+                        field={field}
+                        value={values[field.id]}
+                        file={null}
+                        error={errors[field.id]}
+                        onChange={(v) => setValue(field.id, v)}
+                        onFileChange={() => {}}
+                        allowedFileTypes={form.allowed_file_types}
+                        maxUploadSizeMb={form.max_upload_size_mb}
+                      />
+                    ))}
                   </div>
-                ))}
-              </div>
 
-              {form.instructions && (
-                <div className="text-sm text-ink-600 mt-5 bg-slate-50 rounded-control px-4 py-3">{form.instructions}</div>
+                  {serverError && <p className="text-sm text-danger-500 mt-4">{serverError}</p>}
+
+                  <Button size="lg" className="w-full mt-7" onClick={handleContinue} disabled={submitting}>
+                    {submitting ? "Checking…" : "Continue"}
+                    {!submitting && <ArrowRight size={16} />}
+                  </Button>
+                </motion.div>
+              ) : (
+                <motion.div
+                  key="workspace"
+                  initial={{ opacity: 0, x: 8 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 8 }}
+                  transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+                >
+                  <div className="flex items-center justify-between">
+                    <h1 className="text-2xl font-display text-ink-900">{form.title}</h1>
+                    <Badge tone="success">Open</Badge>
+                  </div>
+                  {form.description && <p className="text-ink-600 text-sm mt-2">{form.description}</p>}
+
+                  <div className="flex gap-2.5 mt-5">
+                    {[
+                      [countdown.days, "Days"],
+                      [countdown.hours, "Hours"],
+                      [countdown.minutes, "Minutes"],
+                      [countdown.seconds, "Seconds"],
+                    ].map(([val, label]) => (
+                      <div key={label as string} className="bg-slate-50 rounded-control px-3 py-2.5 text-center flex-1">
+                        <p className="text-lg font-bold tabular-nums text-ink-900">{String(val).padStart(2, "0")}</p>
+                        <p className="text-2xs text-ink-400 uppercase tracking-wide mt-0.5">{label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {form.instructions && (
+                    <div className="text-sm text-ink-600 mt-5 bg-slate-50 rounded-control px-4 py-3">{form.instructions}</div>
+                  )}
+
+                  <div className="flex flex-col gap-5 mt-7">
+                    {contentFields.map((field, i) => (
+                      <motion.div
+                        key={field.id}
+                        initial={{ opacity: 0, y: 8 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.3), ease: [0.16, 1, 0.3, 1] }}
+                      >
+                        <FieldRenderer
+                          field={field}
+                          value={values[field.id]}
+                          file={files[field.id] ?? null}
+                          error={errors[field.id]}
+                          onChange={(v) => setValue(field.id, v)}
+                          onFileChange={(f) => setFiles((prev) => ({ ...prev, [field.id]: f }))}
+                          allowedFileTypes={form.allowed_file_types}
+                          maxUploadSizeMb={form.max_upload_size_mb}
+                        />
+                      </motion.div>
+                    ))}
+                  </div>
+
+                  {serverError && <p className="text-sm text-danger-500 mt-4">{serverError}</p>}
+
+                  <div className="flex gap-3 mt-7">
+                    <Button variant="outline" onClick={() => setStep("identity")} disabled={submitting}>
+                      <ArrowLeft size={16} /> Back
+                    </Button>
+                    <Button size="lg" className="flex-1" onClick={handleSubmitAssignment} disabled={submitting}>
+                      <UploadCloud size={16} />
+                      {uploadStage ?? (submitting ? "Submitting…" : "Submit Assignment")}
+                    </Button>
+                  </div>
+                  <p className="text-xs text-ink-400 text-center mt-3">You will receive a confirmation after submission.</p>
+                </motion.div>
               )}
-
-              <div className="flex flex-col gap-5 mt-7">
-                {form.form_fields.map((field, i) => (
-                  <motion.div
-                    key={field.id}
-                    initial={{ opacity: 0, y: 8 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ duration: 0.3, delay: Math.min(i * 0.04, 0.3), ease: [0.16, 1, 0.3, 1] }}
-                  >
-                    <FieldRenderer
-                      field={field}
-                      value={values[field.id]}
-                      file={files[field.id] ?? null}
-                      error={errors[field.id]}
-                      onChange={(v) => setValue(field.id, v)}
-                      onFileChange={(f) => setFiles((prev) => ({ ...prev, [field.id]: f }))}
-                      allowedFileTypes={form.allowed_file_types}
-                      maxUploadSizeMb={form.max_upload_size_mb}
-                    />
-                  </motion.div>
-                ))}
-              </div>
-
-              {serverError && <p className="text-sm text-danger-500 mt-4">{serverError}</p>}
-
-              <Button size="lg" className="w-full mt-7" onClick={handleSubmit} disabled={submitting}>
-                <UploadCloud size={16} />
-                {uploadStage ?? (submitting ? "Submitting…" : "Submit Now")}
-              </Button>
-              <p className="text-xs text-ink-400 text-center mt-3">You will receive a confirmation after submission.</p>
-            </>
+            </AnimatePresence>
           )}
         </motion.div>
 
@@ -220,7 +370,7 @@ function ClosedNotice({ reason, closesAt }: { reason?: string; closesAt: string 
         ? "This submission isn't published yet."
         : reason === "closed"
           ? "This submission has been closed by its organizer."
-          : "This submission is now closed.";
+          : "Submission Closed";
 
   return (
     <div className="text-center py-10">
@@ -229,8 +379,8 @@ function ClosedNotice({ reason, closesAt }: { reason?: string; closesAt: string 
       </div>
       <h2 className="font-semibold text-lg text-ink-900">{message}</h2>
       <p className="text-sm text-ink-600 mt-2">
-        {reason === "deadline_passed"
-          ? `The deadline was ${new Date(closesAt).toLocaleString()}. No more submissions are allowed.`
+        {reason === "deadline_passed" || !reason
+          ? "The submission deadline has passed. Late submissions are not accepted."
           : "Check back later, or contact the organizer for details."}
       </p>
     </div>

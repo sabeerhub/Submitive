@@ -7,7 +7,7 @@ import { Button } from "../../components/ui/Button.js";
 import { EmptyState } from "../../components/EmptyState.js";
 import { SkeletonRows } from "../../components/ui/Skeleton.js";
 import { Table, THead, Th, TBody, Tr, Td } from "../../components/ui/Table.js";
-import { Badge } from "../../components/ui/Badge.js";
+import { SubmissionStatusBadge } from "../../components/ui/Badge.js";
 import { useToast } from "../../contexts/ToastContext.js";
 import { api } from "../../lib/api.js";
 import type { FormDetail, SubmissionSummary } from "../../types/domain.js";
@@ -138,7 +138,7 @@ export default function FormSubmissions() {
                     </Td>
                     <Td>{s.submitter_email ?? "—"}</Td>
                     <Td>{new Date(s.submitted_at).toLocaleString()}</Td>
-                    <Td><Badge tone={s.status === "flagged" ? "warning" : "success"}>{s.status}</Badge></Td>
+                    <Td><SubmissionStatusBadge status={s.status} /></Td>
                   </Tr>
                 ))}
               </TBody>

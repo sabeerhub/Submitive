@@ -29,3 +29,19 @@ const FORM_STATUS_TONE: Record<string, Tone> = {
 export function StatusBadge({ status }: { status: string }) {
   return <Badge tone={FORM_STATUS_TONE[status] ?? "neutral"}>{status}</Badge>;
 }
+
+const SUBMISSION_STATUS_TONE: Record<string, Tone> = {
+  submitted: "warning", // identity captured at Step 2, but the submitter hasn't finished Step 4 yet
+  completed: "success",
+  flagged: "warning",
+};
+const SUBMISSION_STATUS_LABEL: Record<string, string> = {
+  submitted: "In progress",
+  completed: "Completed",
+  flagged: "Flagged",
+};
+
+/** Status badge for the two-phase submission flow — "submitted" means identity-only, not finished. */
+export function SubmissionStatusBadge({ status }: { status: string }) {
+  return <Badge tone={SUBMISSION_STATUS_TONE[status] ?? "neutral"}>{SUBMISSION_STATUS_LABEL[status] ?? status}</Badge>;
+}

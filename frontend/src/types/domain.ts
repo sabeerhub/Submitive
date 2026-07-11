@@ -32,6 +32,11 @@ export type FieldType =
   | "file_upload" | "short_text" | "long_text" | "number" | "date"
   | "checkbox" | "radio" | "dropdown" | "url" | "custom";
 
+// The Step 2 "identity" screen of the public submission flow only ever
+// collects these field types; everything else belongs to Step 3/4's
+// submission workspace.
+export const IDENTITY_FIELD_TYPES = new Set<FieldType>(["full_name", "email", "matric_number", "employee_id", "phone"]);
+
 export interface FormField {
   id: string;
   field_type: FieldType;
@@ -68,6 +73,7 @@ export interface SubmissionSummary {
   id: string;
   reference_number: string;
   submitter_email: string | null;
+  submitter_name: string | null;
   status: "submitted" | "completed" | "flagged";
   submitted_at: string;
 }
