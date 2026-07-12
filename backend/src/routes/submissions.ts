@@ -24,6 +24,12 @@ async function assertOwnerHasForm(ownerId: string, formId: string): Promise<void
   await assertOwnerHasWorkspace(ownerId, form.workspace_id);
 }
 
+// The "identity" step of the two-phase submitter flow only ever collects
+// these field types. Everything else (rich_text, file_upload, dropdown,
+// checkbox, date, custom, etc.) belongs to the "workspace" step and is
+// validated later, at finalize.
+const IDENTITY_FIELD_TYPES = new Set(["full_name", "email", "matric_number", "employee_id", "phone"]);
+
 const submitSchema = z.object({
   form_slug: z.string(),
   values: z.record(z.string(), z.unknown()),
@@ -31,9 +37,13 @@ const submitSchema = z.object({
 });
 
 /**
- * POST /api/submissions — the one endpoint every submitter uses.
+ * POST /api/submissions — Step 2 of the submitter flow ("Continue" on the
+ * identity screen). Creates the submission row from identity fields only.
  * No authentication. Deadline + duplicate checks happen here, server-side,
- * regardless of what the client's countdown UI displayed.
+ * regardless of what the client's countdown UI displayed. Required-field
+ * checking here is scoped to identity-type fields only — content fields
+ * (rich text, file upload, custom, etc.) haven't been collected yet and are
+ * validated at PATCH /:id/finalize instead.
  */
 submissionsRouter.post(
   "/",
@@ -43,9 +53,7 @@ submissionsRouter.post(
 
     const { data: form, error: formError } = await supabase
       .from("forms")
-      .select(
-        "id, workspace_id, title, status, opens_at, closes_at, duplicate_policy, form_fields(id, label, is_required, field_type), workspace:workspaces(name, owner:owners(email))"
-      )
+      .select("id, workspace_id, title, status, opens_at, closes_at, duplicate_policy, form_fields(id, label, is_required, field_type)")
       .eq("slug", body.form_slug)
       .single();
 
@@ -56,12 +64,7 @@ submissionsRouter.post(
     assertFormIsOpen(form);
 
     for (const field of form.form_fields) {
-      // file_upload fields are validated separately: the file itself is
-      // registered via POST /:id/files *after* this call succeeds (the
-      // upload needs a submission_id first), so it will never appear in
-      // `values`. Checking it here would reject every submission with a
-      // required file field, even ones that go on to upload it correctly.
-      if (field.field_type === "file_upload") continue;
+      if (!IDENTITY_FIELD_TYPES.has(field.field_type)) continue;
       if (field.is_required && !(field.id in body.values)) {
         throw new AppError(`Missing required field: ${field.label}`, 422);
       }
@@ -79,6 +82,11 @@ submissionsRouter.post(
       }
     }
 
+    // Denormalize the submitter's name onto the row for fast receipt/dashboard
+    // display, same pattern as submitter_email.
+    const nameField = form.form_fields.find((f) => f.field_type === "full_name");
+    const submitterName = nameField ? body.values[nameField.id] : undefined;
+
     const referenceNumber = `STV-${new Date().getFullYear()}-${refIdSuffix()}`;
 
     const { data: submission, error: subError } = await supabase
@@ -88,6 +96,7 @@ submissionsRouter.post(
         workspace_id: form.workspace_id,
         reference_number: referenceNumber,
         submitter_email: body.submitter_email ?? null,
+        submitter_name: typeof submitterName === "string" ? submitterName : null,
         dedupe_key: dedupeKey,
         ip_address: req.ip,
         user_agent: req.headers["user-agent"],
@@ -113,30 +122,129 @@ submissionsRouter.post(
       if (valuesError) throw new AppError(valuesError.message, 500);
     }
 
-    // Fire-and-forget notifications — never let email delivery hold up the
-    // submitter's response or fail the submission itself.
-    if (body.submitter_email) {
-      sendSubmissionConfirmation({
-        to: body.submitter_email,
-        formTitle: form.title,
-        referenceNumber,
-        submittedAt: submission.submitted_at,
-      }).catch((err) => console.error("[email] confirmation failed:", err));
-    }
-    const ownerEmail = (form as any).workspace?.owner?.email;
-    if (ownerEmail) {
-      sendOwnerNewSubmissionNotice({
-        to: ownerEmail,
-        formTitle: form.title,
-        referenceNumber,
-        dashboardUrl: `${process.env.FRONTEND_URL}/dashboard/forms/${form.id}`,
-      }).catch((err) => console.error("[email] owner notice failed:", err));
-    }
+    // Confirmation/notification emails are sent at finalize (PATCH
+    // /:id/finalize), not here — at this point the submitter has only
+    // entered their identity, not actually finished submitting anything.
 
     res.status(201).json({
       submission_id: submission.id,
       reference_number: referenceNumber,
       submitted_at: submission.submitted_at,
+    });
+  })
+);
+
+const finalizeSchema = z.object({
+  values: z.record(z.string(), z.unknown()),
+});
+
+/**
+ * PATCH /api/submissions/:id/finalize — Step 4 of the submitter flow
+ * ("Submit Assignment" in the workspace). Accepts the remaining (non-identity)
+ * field values, re-checks the deadline (the submitter may have spent real
+ * time in the workspace since Step 2), validates every required field across
+ * the WHOLE form is now satisfied — including required file_upload fields,
+ * checked via submission_files rather than `values` since files are
+ * registered through the separate sign/register endpoints — then marks the
+ * submission complete and sends the confirmation/owner-notification emails.
+ *
+ * Idempotent: calling this twice on an already-completed submission just
+ * returns the existing result rather than erroring or double-emailing.
+ */
+submissionsRouter.patch(
+  "/:id/finalize",
+  submissionLimiter,
+  asyncHandler(async (req, res) => {
+    const submissionId = z.string().uuid().parse(req.params.id);
+    const body = finalizeSchema.parse(req.body);
+
+    const { data: submission, error: subErr } = await supabase
+      .from("submissions")
+      .select(
+        "id, form_id, workspace_id, status, completed_at, reference_number, submitter_email, forms(title, status, opens_at, closes_at, form_fields(id, label, is_required, field_type), workspace:workspaces(name, owner:owners(email)))"
+      )
+      .eq("id", submissionId)
+      .single();
+    if (subErr || !submission) throw new AppError("Submission not found", 404);
+
+    if (submission.status === "completed") {
+      // Already finalized (e.g. a retried request) — return the same result
+      // rather than re-validating, re-writing values, or re-sending emails.
+      return res.json({
+        submission_id: submission.id,
+        reference_number: submission.reference_number,
+        completed_at: submission.completed_at,
+      });
+    }
+
+    const form = (submission as any).forms;
+    // Layer 2 of 3 again, at the actual moment of final submission — the
+    // submitter may have sat in the workspace long enough for the deadline
+    // to pass since Step 2.
+    assertFormIsOpen(form);
+
+    const { data: existingValues, error: existingValuesErr } = await supabase
+      .from("submission_values")
+      .select("field_id")
+      .eq("submission_id", submissionId);
+    if (existingValuesErr) throw new AppError(existingValuesErr.message, 500);
+    const answeredFieldIds = new Set([...(existingValues ?? []).map((v) => v.field_id), ...Object.keys(body.values)]);
+
+    const { data: files, error: filesErr } = await supabase
+      .from("submission_files")
+      .select("field_id")
+      .eq("submission_id", submissionId);
+    if (filesErr) throw new AppError(filesErr.message, 500);
+    const fieldsWithFiles = new Set((files ?? []).map((f) => f.field_id).filter(Boolean));
+
+    for (const field of form.form_fields as Array<{ id: string; label: string; is_required: boolean; field_type: string }>) {
+      if (!field.is_required) continue;
+      const satisfied = field.field_type === "file_upload" ? fieldsWithFiles.has(field.id) : answeredFieldIds.has(field.id);
+      if (!satisfied) throw new AppError(`Missing required field: ${field.label}`, 422);
+    }
+
+    const valueRows = Object.entries(body.values).map(([field_id, value]) => ({
+      submission_id: submissionId,
+      field_id,
+      value_text: typeof value === "string" ? value : null,
+      value_json: typeof value === "string" ? null : value,
+    }));
+    if (valueRows.length > 0) {
+      const { error: upsertError } = await supabase
+        .from("submission_values")
+        .upsert(valueRows, { onConflict: "submission_id,field_id" });
+      if (upsertError) throw new AppError(upsertError.message, 500);
+    }
+
+    const completedAt = new Date().toISOString();
+    const { error: updateErr } = await supabase
+      .from("submissions")
+      .update({ status: "completed", completed_at: completedAt })
+      .eq("id", submissionId);
+    if (updateErr) throw new AppError(updateErr.message, 500);
+
+    if (submission.submitter_email) {
+      sendSubmissionConfirmation({
+        to: submission.submitter_email,
+        formTitle: form.title,
+        referenceNumber: submission.reference_number,
+        submittedAt: completedAt,
+      }).catch((err) => console.error("[email] confirmation failed:", err));
+    }
+    const ownerEmail = form.workspace?.owner?.email;
+    if (ownerEmail) {
+      sendOwnerNewSubmissionNotice({
+        to: ownerEmail,
+        formTitle: form.title,
+        referenceNumber: submission.reference_number,
+        dashboardUrl: `${process.env.FRONTEND_URL}/dashboard/forms/${submission.form_id}`,
+      }).catch((err) => console.error("[email] owner notice failed:", err));
+    }
+
+    res.json({
+      submission_id: submission.id,
+      reference_number: submission.reference_number,
+      completed_at: completedAt,
     });
   })
 );
@@ -245,7 +353,7 @@ submissionsRouter.get(
 
     const { data: submission, error } = await supabase
       .from("submissions")
-      .select("id, reference_number, submitted_at, submitter_email, forms(title, workspace_id, workspace:workspaces(name))")
+      .select("id, reference_number, submitted_at, completed_at, submitter_email, submitter_name, forms(title, workspace_id, workspace:workspaces(name))")
       .eq("id", submissionId)
       .eq("reference_number", referenceNumber)
       .single();
@@ -272,7 +380,7 @@ submissionsRouter.get(
 
     let query = supabase
       .from("submissions")
-      .select("id, reference_number, submitter_email, status, submitted_at", { count: "exact" })
+      .select("id, reference_number, submitter_email, submitter_name, status, submitted_at", { count: "exact" })
       .eq("form_id", formId)
       .order("submitted_at", { ascending: sort })
       .range(from, to);
@@ -303,17 +411,19 @@ submissionsRouter.get(
 
     const { data: submissions, error: subsError } = await supabase
       .from("submissions")
-      .select("id, reference_number, submitter_email, submitted_at, submission_values(field_id, value_text, value_json)")
+      .select("id, reference_number, submitter_email, submitter_name, submitted_at, status, submission_values(field_id, value_text, value_json)")
       .eq("form_id", formId)
       .order("submitted_at", { ascending: false });
     if (subsError) throw new AppError(subsError.message, 500);
 
-    const header = ["Reference Number", "Email", "Submitted At", ...fields.map((f) => f.label)];
+    const header = ["Reference Number", "Name", "Email", "Status", "Submitted At", ...fields.map((f) => f.label)];
     const csvRows = submissions.map((s) => {
       const valueByField = new Map(s.submission_values.map((v: any) => [v.field_id, v.value_text ?? JSON.stringify(v.value_json)]));
       return [
         s.reference_number,
+        s.submitter_name ?? "",
         s.submitter_email ?? "",
+        s.status,
         new Date(s.submitted_at).toISOString(),
         ...fields.map((f) => valueByField.get(f.id) ?? ""),
       ];
