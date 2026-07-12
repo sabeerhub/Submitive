@@ -6,6 +6,7 @@ import ForgotPassword from "./pages/ForgotPassword.js";
 import Onboarding from "./pages/Onboarding.js";
 import WorkspaceList from "./pages/WorkspaceList.js";
 import Dashboard from "./pages/Dashboard.js";
+import { ComingSoon } from "./pages/ComingSoon.js";
 import FormBuilder from "./pages/FormBuilder.js";
 import PublicSubmission from "./pages/PublicSubmission.js";
 import SubmissionReceipt from "./pages/SubmissionReceipt.js";
@@ -43,6 +44,9 @@ export default function App() {
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/dashboard/forms" element={<ProtectedRoute><FormsList /></ProtectedRoute>} />
       <Route path="/dashboard/forms/:id" element={<ProtectedRoute><FormSubmissions /></ProtectedRoute>} />
+      <Route path="/dashboard/templates" element={<ProtectedRoute><ComingSoon title="Templates" /></ProtectedRoute>} />
+      <Route path="/dashboard/team" element={<ProtectedRoute><ComingSoon title="Team" /></ProtectedRoute>} />
+      <Route path="/dashboard/settings" element={<ProtectedRoute><ComingSoon title="Settings" /></ProtectedRoute>} />
       <Route
         path="/dashboard/forms/:id/submissions/:submissionId"
         element={<ProtectedRoute><SubmissionDetail /></ProtectedRoute>}
