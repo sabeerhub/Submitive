@@ -37,6 +37,7 @@ export const api = {
     request<T>(path, { method: "POST", body: JSON.stringify(body) }),
   patch: <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
+  delete: <T>(path: string) => request<T>(path, { method: "DELETE" }),
   /** Downloads a binary response (CSV/ZIP export) and triggers a browser save. */
   download: async (path: string, filename: string) => {
     const res = await fetch(`${API_BASE}${path}`, { headers: await authHeader() });

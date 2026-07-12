@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { useNavigate, useParams } from "react-router-dom";
+import { useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { z } from "zod";
@@ -41,6 +41,8 @@ const DEFAULT_FIELDS: WorkingField[] = [
 
 export default function FormBuilder() {
   const { id } = useParams(); // present when editing an existing form
+  const [searchParams] = useSearchParams();
+  const templateId = searchParams.get("template"); // present when starting a new form from an existing one
   const isEditing = !!id;
   const { activeWorkspace } = useAuth();
   const workspace = activeWorkspace;
@@ -51,7 +53,7 @@ export default function FormBuilder() {
   const [submissionUrl, setSubmissionUrl] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   const [serverError, setServerError] = useState<string | null>(null);
-  const [loaded, setLoaded] = useState(!isEditing);
+  const [loaded, setLoaded] = useState(!isEditing && !templateId);
   const [loadError, setLoadError] = useState(false);
 
   const {
@@ -90,6 +92,26 @@ export default function FormBuilder() {
       })
       .catch(() => setLoadError(true));
   }, [id, isEditing, reset]);
+
+  useEffect(() => {
+    if (!templateId || isEditing) return;
+    api
+      .get<{ form: FormDetail }>(`/forms/manage/${templateId}`)
+      .then(({ form }) => {
+        reset({
+          title: `${form.title} (Copy)`,
+          description: form.description ?? "",
+          closesAt: "", // deliberately not copied — always pick a fresh deadline
+          maxUploadSizeMb: form.max_upload_size_mb,
+          maxFiles: form.max_files,
+          duplicatePolicy: form.duplicate_policy,
+          allowedFileTypes: form.allowed_file_types,
+        });
+        setFields(form.form_fields.map((f) => ({ ...f, clientId: newClientId() })).sort((a, b) => a.position - b.position));
+        setLoaded(true);
+      })
+      .catch(() => setLoadError(true));
+  }, [templateId, isEditing, reset]);
 
   const selectedTypes = watch("allowedFileTypes") ?? [];
   const toggleType = (type: string) => {

@@ -78,6 +78,7 @@ create table forms (
 
   opens_at            timestamptz,
   closes_at           timestamptz not null,          -- deadline; enforced everywhere
+  reminder_sent_at    timestamptz,                     -- set once the deadline-approaching email has gone out, to avoid re-sending
   timezone            text not null default 'UTC',
 
   max_upload_size_mb  integer not null default 50,
@@ -137,11 +138,13 @@ create table submissions (
   workspace_id      uuid not null references workspaces(id) on delete cascade, -- denormalized for fast RLS + queries
   reference_number  text unique not null,        -- e.g. STV-2026-0001248
   submitter_email   text,                          -- nullable; used for duplicate checks + receipts
+  submitter_name    text,                          -- captured at the identity step, denormalized for quick receipt/dashboard display
   dedupe_key        text,                          -- normalized value used per duplicate_policy (email/matric/employee_id/phone)
   status            text not null default 'submitted' check (status in ('submitted','completed','flagged')),
   ip_address        inet,
   user_agent        text,
-  submitted_at      timestamptz not null default now(),
+  submitted_at      timestamptz not null default now(),  -- when the identity step created this submission
+  completed_at      timestamptz,                          -- when "Submit Assignment" finished the two-phase flow; null while in progress
   updated_at        timestamptz not null default now(),
   locked            boolean not null default false  -- set true once closes_at passes; belt-and-suspenders alongside app-layer checks
 );

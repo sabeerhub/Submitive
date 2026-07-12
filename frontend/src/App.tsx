@@ -11,6 +11,8 @@ import FormBuilder from "./pages/FormBuilder.js";
 import PublicSubmission from "./pages/PublicSubmission.js";
 import SubmissionReceipt from "./pages/SubmissionReceipt.js";
 import FormsList from "./pages/dashboard/FormsList.js";
+import Team from "./pages/dashboard/Team.js";
+import Templates from "./pages/dashboard/Templates.js";
 import FormSubmissions from "./pages/dashboard/FormSubmissions.js";
 import SubmissionDetail from "./pages/dashboard/SubmissionDetail.js";
 import NotFound from "./pages/NotFound.js";
@@ -44,8 +46,8 @@ export default function App() {
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/dashboard/forms" element={<ProtectedRoute><FormsList /></ProtectedRoute>} />
       <Route path="/dashboard/forms/:id" element={<ProtectedRoute><FormSubmissions /></ProtectedRoute>} />
-      <Route path="/dashboard/templates" element={<ProtectedRoute><ComingSoon title="Templates" /></ProtectedRoute>} />
-      <Route path="/dashboard/team" element={<ProtectedRoute><ComingSoon title="Team" /></ProtectedRoute>} />
+      <Route path="/dashboard/templates" element={<ProtectedRoute><Templates /></ProtectedRoute>} />
+      <Route path="/dashboard/team" element={<ProtectedRoute><Team /></ProtectedRoute>} />
       <Route path="/dashboard/settings" element={<ProtectedRoute><ComingSoon title="Settings" /></ProtectedRoute>} />
       <Route
         path="/dashboard/forms/:id/submissions/:submissionId"

@@ -4,7 +4,7 @@ import { requireAuth } from "../middleware/auth.js";
 import { asyncHandler } from "../utils/asyncHandler.js";
 import { supabase } from "../config/supabase.js";
 import { AppError } from "../middleware/errorHandler.js";
-import { assertOwnerHasWorkspace, getOwnerWorkspaceIds } from "../services/authorization.js";
+import { assertOwnerHasWorkspace, assertIsWorkspaceOwnerRole, getOwnerWorkspaceIds } from "../services/authorization.js";
 
 export const workspacesRouter = Router();
 
@@ -110,5 +110,89 @@ workspacesRouter.get(
       total_forms: totalForms ?? 0,
       live_forms: liveForms ?? 0,
     });
+  })
+);
+
+/** GET /api/workspaces/:id/members — list the workspace's team. */
+workspacesRouter.get(
+  "/:id/members",
+  asyncHandler(async (req, res) => {
+    const workspaceId = z.string().uuid().parse(req.params.id);
+    await assertOwnerHasWorkspace(req.owner!.id, workspaceId);
+
+    const { data, error } = await supabase
+      .from("workspace_members")
+      .select("id, role, invited_at, accepted_at, owner:owners(id, email, full_name, avatar_url)")
+      .eq("workspace_id", workspaceId)
+      .order("invited_at", { ascending: true });
+    if (error) throw new AppError(error.message, 500);
+
+    res.json({ members: data });
+  })
+);
+
+const inviteSchema = z.object({ email: z.string().email() });
+
+/**
+ * POST /api/workspaces/:id/members — invite a teammate by email.
+ * Only works for people who already have a Submitiv account (no email-invite
+ * flow yet — if they don't exist, the response tells the owner to ask that
+ * person to sign up first, then invite again).
+ */
+workspacesRouter.post(
+  "/:id/members",
+  asyncHandler(async (req, res) => {
+    const workspaceId = z.string().uuid().parse(req.params.id);
+    await assertIsWorkspaceOwnerRole(req.owner!.id, workspaceId);
+    const body = inviteSchema.parse(req.body);
+
+    const { data: invitee, error: lookupError } = await supabase
+      .from("owners")
+      .select("id")
+      .eq("email", body.email.toLowerCase())
+      .maybeSingle();
+    if (lookupError) throw new AppError(lookupError.message, 500);
+    if (!invitee) {
+      throw new AppError("No Submitiv account found with that email yet. Ask them to sign up first, then invite them again.", 404);
+    }
+
+    const { data: member, error: insertError } = await supabase
+      .from("workspace_members")
+      .insert({ workspace_id: workspaceId, owner_id: invitee.id, role: "member", accepted_at: new Date().toISOString() })
+      .select("id, role, invited_at, accepted_at, owner:owners(id, email, full_name, avatar_url)")
+      .single();
+    if (insertError) {
+      if (insertError.code === "23505") {
+        throw new AppError("That person is already a member of this workspace.", 409);
+      }
+      throw new AppError(insertError.message, 500);
+    }
+
+    res.status(201).json({ member });
+  })
+);
+
+/** DELETE /api/workspaces/:id/members/:memberId — remove a teammate (can't remove the owner). */
+workspacesRouter.delete(
+  "/:id/members/:memberId",
+  asyncHandler(async (req, res) => {
+    const workspaceId = z.string().uuid().parse(req.params.id);
+    const memberId = z.string().uuid().parse(req.params.memberId);
+    await assertIsWorkspaceOwnerRole(req.owner!.id, workspaceId);
+
+    const { data: member, error: fetchError } = await supabase
+      .from("workspace_members")
+      .select("role")
+      .eq("id", memberId)
+      .eq("workspace_id", workspaceId)
+      .maybeSingle();
+    if (fetchError) throw new AppError(fetchError.message, 500);
+    if (!member) throw new AppError("Not found", 404);
+    if (member.role === "owner") throw new AppError("The workspace owner can't be removed.", 400);
+
+    const { error: deleteError } = await supabase.from("workspace_members").delete().eq("id", memberId);
+    if (deleteError) throw new AppError(deleteError.message, 500);
+
+    res.json({ success: true });
   })
 );

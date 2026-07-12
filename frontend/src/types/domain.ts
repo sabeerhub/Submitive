@@ -100,3 +100,11 @@ export interface SubmissionDetail {
   values: { field_id: string; value_text: string | null; value_json: unknown }[];
   files: SubmissionFile[];
 }
+
+export interface WorkspaceMember {
+  id: string;
+  role: "owner" | "admin" | "member";
+  invited_at: string;
+  accepted_at: string | null;
+  owner: { id: string; email: string; full_name: string | null; avatar_url: string | null };
+}

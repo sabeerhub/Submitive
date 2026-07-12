@@ -41,6 +41,20 @@ export async function getOwnerWorkspaceIds(ownerId: string): Promise<string[]> {
   return (data ?? []).map((r) => r.workspace_id);
 }
 
+/** Throws 403 unless the owner's role in this workspace is 'owner' (used to gate team management). */
+export async function assertIsWorkspaceOwnerRole(ownerId: string, workspaceId: string): Promise<void> {
+  const { data, error } = await supabase
+    .from("workspace_members")
+    .select("role")
+    .eq("workspace_id", workspaceId)
+    .eq("owner_id", ownerId)
+    .maybeSingle();
+  if (error) throw new AppError(error.message, 500);
+  if (!data || data.role !== "owner") {
+    throw new AppError("Only the workspace owner can manage team members.", 403);
+  }
+}
+
 /** Fetches a form by ID and verifies the caller's workspace owns it, throwing 404 otherwise. */
 export async function getOwnedForm(ownerId: string, formId: string) {
   const { data: form, error } = await supabase.from("forms").select("*").eq("id", formId).maybeSingle();

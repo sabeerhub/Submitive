@@ -8,6 +8,7 @@ import { authRouter } from "./routes/auth.js";
 import { workspacesRouter } from "./routes/workspaces.js";
 import { formsRouter } from "./routes/forms.js";
 import { submissionsRouter } from "./routes/submissions.js";
+import { cronRouter } from "./routes/cron.js";
 
 const app = express();
 
@@ -42,6 +43,7 @@ app.use("/api/auth", authRouter);
 app.use("/api/workspaces", workspacesRouter);
 app.use("/api/forms", formsRouter);
 app.use("/api/submissions", submissionsRouter);
+app.use("/api/cron", cronRouter);
 
 // 404 for unmatched API routes
 app.use("/api", (_req, res) => res.status(404).json({ error: "Not found" }));
