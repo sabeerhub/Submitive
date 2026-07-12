@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { Link } from "react-router-dom";
 import {
@@ -58,6 +58,13 @@ const STEPS = [
 export default function Landing() {
   const [menuOpen, setMenuOpen] = useState(false);
 
+  useEffect(() => {
+    document.body.style.overflow = menuOpen ? "hidden" : "";
+    return () => {
+      document.body.style.overflow = "";
+    };
+  }, [menuOpen]);
+
   return (
     <div className="min-h-screen bg-paper overflow-x-hidden">
       <header className="relative">
@@ -90,32 +97,67 @@ export default function Landing() {
         <AnimatePresence>
           {menuOpen && (
             <motion.div
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={{ duration: 0.22, ease: [0.16, 1, 0.3, 1] }}
-              className="md:hidden overflow-hidden border-t border-slate-200 bg-white"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.25, ease: [0.16, 1, 0.3, 1] }}
+              className="md:hidden fixed inset-0 z-50 bg-panel-900 flex flex-col"
             >
-              <div className="px-5 py-5 flex flex-col gap-4">
-                {NAV_LINKS.map((link) => (
-                  <a
+              <div
+                className="absolute inset-0 opacity-[0.05] pointer-events-none"
+                style={{
+                  backgroundImage: "linear-gradient(#fff 1px, transparent 1px), linear-gradient(90deg, #fff 1px, transparent 1px)",
+                  backgroundSize: "44px 44px",
+                }}
+              />
+
+              <div className="relative flex items-center justify-between px-5 py-5">
+                <div className="flex items-center gap-2.5 font-semibold text-white text-[15px]">
+                  <Logomark size={26} bare />
+                  Submitiv
+                </div>
+                <button
+                  onClick={() => setMenuOpen(false)}
+                  aria-label="Close menu"
+                  className="text-white/70 hover:text-white transition-colors"
+                >
+                  <X size={24} />
+                </button>
+              </div>
+
+              <nav className="relative flex-1 flex flex-col justify-center px-8 gap-1">
+                {NAV_LINKS.map((link, i) => (
+                  <motion.a
                     key={link.href}
                     href={link.href}
                     onClick={() => setMenuOpen(false)}
-                    className="text-sm font-medium text-ink-700"
+                    initial={{ opacity: 0, y: 12 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.35, delay: 0.1 + i * 0.06, ease: [0.16, 1, 0.3, 1] }}
+                    className="font-display text-4xl text-white py-3 border-b border-white/10 flex items-center justify-between group"
                   >
                     {link.label}
-                  </a>
+                    <ArrowRight size={22} className="text-primary-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  </motion.a>
                 ))}
-                <div className="flex flex-col gap-2.5 pt-2 border-t border-slate-100">
-                  <Link to="/login" onClick={() => setMenuOpen(false)}>
-                    <Button variant="outline" className="w-full">Login</Button>
-                  </Link>
-                  <Link to="/register" onClick={() => setMenuOpen(false)}>
-                    <Button className="w-full">Get Started Free</Button>
-                  </Link>
-                </div>
-              </div>
+              </nav>
+
+              <motion.div
+                initial={{ opacity: 0, y: 12 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.35, delay: 0.32, ease: [0.16, 1, 0.3, 1] }}
+                className="relative px-8 pb-10 flex flex-col gap-3"
+              >
+                <Link to="/login" onClick={() => setMenuOpen(false)}>
+                  <Button variant="outline" className="w-full !bg-transparent !border-white/20 !text-white hover:!bg-white/5">
+                    Login
+                  </Button>
+                </Link>
+                <Link to="/register" onClick={() => setMenuOpen(false)}>
+                  <Button className="w-full">Get Started Free</Button>
+                </Link>
+                <p className="text-center text-xs text-slate-500 mt-4">Create. Share. Collect. Close.</p>
+              </motion.div>
             </motion.div>
           )}
         </AnimatePresence>
