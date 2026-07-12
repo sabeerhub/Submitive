@@ -36,7 +36,7 @@ app.use((req, res, next) => {
   next();
 });
 
-app.get("/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
+app.get("/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString(), build: "two-step-flow-v1" }));
 
 app.use("/api/auth", authRouter);
 app.use("/api/workspaces", workspacesRouter);
