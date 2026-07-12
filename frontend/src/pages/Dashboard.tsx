@@ -26,8 +26,8 @@ const statCards = [
 ];
 
 export default function Dashboard() {
-  const { workspaces } = useAuth();
-  const workspace = workspaces[0];
+  const { activeWorkspace } = useAuth();
+  const workspace = activeWorkspace;
   const [forms, setForms] = useState<FormSummary[] | null>(null);
   const [analytics, setAnalytics] = useState<Analytics | null>(null);
 

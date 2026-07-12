@@ -28,7 +28,7 @@ type FormValues = z.infer<typeof schema>;
 
 export default function Onboarding() {
   const navigate = useNavigate();
-  const { refreshOwner } = useAuth();
+  const { refreshOwner, setActiveWorkspaceId } = useAuth();
   const [serverError, setServerError] = useState<string | null>(null);
   const {
     register,
@@ -43,11 +43,12 @@ export default function Onboarding() {
   const onSubmit = async (values: FormValues) => {
     setServerError(null);
     try {
-      await api.post<{ workspace: Workspace }>("/workspaces", {
+      const res = await api.post<{ workspace: Workspace }>("/workspaces", {
         name: values.name,
         slug: slugify(values.name),
       });
       await refreshOwner();
+      setActiveWorkspaceId(res.workspace.id);
       navigate("/dashboard", { replace: true });
     } catch (err) {
       setServerError(err instanceof Error ? err.message : "Couldn't create your workspace. Try a different name.");

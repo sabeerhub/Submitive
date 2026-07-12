@@ -4,6 +4,7 @@ import Login from "./pages/Login.js";
 import Register from "./pages/Register.js";
 import ForgotPassword from "./pages/ForgotPassword.js";
 import Onboarding from "./pages/Onboarding.js";
+import WorkspaceList from "./pages/WorkspaceList.js";
 import Dashboard from "./pages/Dashboard.js";
 import FormBuilder from "./pages/FormBuilder.js";
 import PublicSubmission from "./pages/PublicSubmission.js";
@@ -38,6 +39,7 @@ export default function App() {
       />
 
       {/* Owner dashboard */}
+      <Route path="/workspaces" element={<ProtectedRoute><WorkspaceList /></ProtectedRoute>} />
       <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
       <Route path="/dashboard/forms" element={<ProtectedRoute><FormsList /></ProtectedRoute>} />
       <Route path="/dashboard/forms/:id" element={<ProtectedRoute><FormSubmissions /></ProtectedRoute>} />

@@ -28,7 +28,7 @@ export default function Login() {
     formState: { errors, isSubmitting },
   } = useForm<FormValues>({ resolver: zodResolver(schema) });
 
-  const redirectTo = (location.state as { from?: Location })?.from?.pathname ?? "/dashboard";
+  const redirectTo = (location.state as { from?: Location })?.from?.pathname ?? "/workspaces";
 
   const onSubmit = async (values: FormValues) => {
     setServerError(null);

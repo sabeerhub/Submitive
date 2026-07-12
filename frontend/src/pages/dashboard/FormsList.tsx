@@ -14,8 +14,8 @@ import { api } from "../../lib/api.js";
 import type { FormSummary } from "../../types/domain.js";
 
 export default function FormsList() {
-  const { workspaces } = useAuth();
-  const workspace = workspaces[0];
+  const { activeWorkspace } = useAuth();
+  const workspace = activeWorkspace;
   const toast = useToast();
   const [forms, setForms] = useState<FormSummary[] | null>(null);
 

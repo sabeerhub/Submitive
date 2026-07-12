@@ -42,8 +42,8 @@ const DEFAULT_FIELDS: WorkingField[] = [
 export default function FormBuilder() {
   const { id } = useParams(); // present when editing an existing form
   const isEditing = !!id;
-  const { workspaces } = useAuth();
-  const workspace = workspaces[0];
+  const { activeWorkspace } = useAuth();
+  const workspace = activeWorkspace;
   const navigate = useNavigate();
 
   const [fields, setFields] = useState<WorkingField[]>(DEFAULT_FIELDS);
